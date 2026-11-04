@@ -1,0 +1,5 @@
+*.storage.json
+state.key
+__pycache__/
+.pytest_cache/
+.venv/
