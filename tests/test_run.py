@@ -179,3 +179,12 @@ def test_watch_runs_hourly():
     assert run.watch_due({}, NOW) is True
     assert run.watch_due({"watched_at": NOW - 100}, NOW) is False
     assert run.watch_due({"watched_at": NOW - 3600}, NOW) is True
+
+
+def test_saving_unchanged_state_leaves_the_file_alone(tmp_path):
+    key = st.new_key()
+    p = tmp_path / "state.enc"
+    st.save({"a": 1}, key, p)
+    first = p.read_bytes()
+    st.save({"a": 1}, key, p)
+    assert p.read_bytes() == first

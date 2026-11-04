@@ -23,4 +23,6 @@ def load(key, path=PATH):
 
 
 def save(data, key, path=PATH):
+    if Path(path).exists() and load(key, path) == json.loads(json.dumps(data)):
+        return
     Path(path).write_bytes(Fernet(key.encode()).encrypt(json.dumps(data).encode()))
