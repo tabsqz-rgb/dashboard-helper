@@ -173,3 +173,9 @@ def test_notify_posts_to_topic(monkeypatch):
 def test_notify_without_topic_returns_false(monkeypatch):
     monkeypatch.delenv("NTFY_URL", raising=False)
     assert notify.send("hello") is False
+
+
+def test_watch_runs_hourly():
+    assert run.watch_due({}, NOW) is True
+    assert run.watch_due({"watched_at": NOW - 100}, NOW) is False
+    assert run.watch_due({"watched_at": NOW - 3600}, NOW) is True

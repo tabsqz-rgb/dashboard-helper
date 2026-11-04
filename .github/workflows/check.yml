@@ -1,13 +1,19 @@
-name: Content Rewards login test
+name: Check clips
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: check
+  cancel-in-progress: false
 
 jobs:
-  login-test:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -15,9 +21,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install playwright
-      - run: playwright install --with-deps chromium
-      - run: python helper/login_test.py
+      - run: pip install cryptography
+      - run: python helper/run.py
         env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
           CR_STATE: ${{ secrets.CR_STATE }}
-          TEST_CAMPAIGN: 6a478a78-d3fe-4e07-80fc-4bde2fd215aa
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          DRY_RUN: "1"
+      - name: Save what the helper remembered
+        if: always()
+        run: |
+          git config user.name "dashboard-helper"
+          git config user.email "dashboard-helper@users.noreply.github.com"
+          git add state.enc
+          git diff --cached --quiet || git commit -m "update state"
+          git push

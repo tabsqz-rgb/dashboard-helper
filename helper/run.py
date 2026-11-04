@@ -7,13 +7,16 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 import notify
 import state as st
 import tiktok
+import watch
 
 SITE = "https://contentrewards.com"
 WINDOW = 29 * 60            # Content Rewards takes clips posted in the last 30 minutes; allow a minute to get there
+WATCH_EVERY = 3600
 IGNORE_AFTER = 6 * 3600     # older than this was already here before the helper looked, so say nothing
 
 
@@ -115,6 +118,43 @@ def browser_submit(campaign, link):
     return (True, "submitted") if res.get("success") else (False, "Content Rewards said no: " + _reason(res))
 
 
+def watch_due(state, now):
+    return now - state.get("watched_at", 0) >= WATCH_EVERY
+
+
+def read_results():
+    """Your recent submissions, read from a signed-in page."""
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "playwright"], check=True)
+    subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], check=True, capture_output=True)
+    from playwright.sync_api import sync_playwright
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        f.write(os.environ["CR_STATE"])
+    try:
+        with sync_playwright() as pw:
+            br = pw.chromium.launch(headless=True)
+            page = br.new_context(storage_state=f.name).new_page()
+            page.goto(SITE + "/c/home", wait_until="load", timeout=60000)
+            page.wait_for_timeout(4000)
+            if "/login" in page.url or page.evaluate("() => !!document.querySelector('a[href^=\"/login\"]')"):
+                raise RuntimeError("Content Rewards has signed me out")
+            rows = []
+            for status in ("pending", "approved", "rejected"):
+                body = page.evaluate("""async (s) => (await fetch('/api/submission/submissions?limit=50&creatorView=true&status=' + s, {credentials: 'include'})).json()""", status)
+                if not isinstance(body.get("data"), list):
+                    raise RuntimeError("its results page has changed")
+                rows += body["data"]
+            br.close()
+            return rows
+    finally:
+        os.unlink(f.name)
+
+
+def _get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read().decode("utf-8", "replace")
+
+
 def main():
     key = os.environ["STATE_KEY"]
     dry = os.environ.get("DRY_RUN", "") == "1"
@@ -131,6 +171,9 @@ def main():
             continue
         for v in videos:
             handle(v, data.get("campaigns", []), now, data, browser_submit, notify.send, dry_run=dry)
+    if watch_due(data, now):
+        watch.check(data, read_results, data.get("campaigns", []), _get, notify.send)
+        data["watched_at"] = now
     data["submitted"] = data["submitted"][-500:]
     data["alerted"] = data["alerted"][-500:]
     st.save(data, key)
